@@ -1,62 +1,61 @@
 import scrapy
 import pandas as pd
-import time
+import re
 
 state = str(input('ingrese el estado en donde se ejecutara la busqueda: \n'))
 target = str(input('ingrese la institucion que desea investigar: \n'))
 
-sentences = {'names': '//div[@class="box"]//h2/span[@itemprop="name"]/text()',
-             'address': '//div[@class="box"]//span[@itemprop="streetAddress"]/text()',
-             'postal_code': '//div[@class="box"]//span[@itemprop="postalCode"]/text()',
-             'phone': '//div[@class="box"]//span[@itemprop="telephone"]/text()'}
+sentences = {'names': '//h1/text()',
+             'address': '//div[@class="content"]//span[@itemprop="streetAddress"]/text()',
+             'postal_code': '//div[@class="content"]//span[@itemprop="postalCode"]/text()',
+             'phone': '//span[@class="telephone"]/b/text()',
+             'email': '//div[@class="contenedor" and contains(@data-business,"customerMail")]/@data-business'}
+
+patron_re = r'"customerMail":"([^"]+)"'
 
 
 class PaginasAmarillas(scrapy.Spider):
     name = 'amarillas'
     start_urls = [
         f'https://www.paginasamarillas.es/a/{target}/{state}/']
+    links = []
     data = {'name': [], 'address': [],
-            'postal_code': [], 'phone': [], 'state': []}
+            'postal_code': [], 'phone': [], 'email': [], 'state': []}
 
     def parse(self, response):
-        names = response.xpath(
-            f'{sentences["names"]}').getall()
-        address = response.xpath(
-            f'{sentences["address"]}').getall()
-        postal_code = response.xpath(
-            f'{sentences["postal_code"]}').getall()
-        phone = response.xpath(
-            f'{sentences["phone"]}').getall()
+        self.links.extend(response.xpath(
+            '//a[@href and @title and @data-omniclick="name"]/@href').getall())
 
         # esta sentencia xpath hace referencia al boton de siguiente pagina
         if response.xpath('//i[contains(@class,"flecha-derecha")]'):
             next_link = response.xpath(
                 '//i[contains(@class,"flecha-derecha")]/../@href').get()
-            self.data['name'].extend(names)
-            self.data['address'].extend(address)
-            self.data['postal_code'].extend(postal_code)
-            self.data['phone'].extend(phone)
-            yield response.follow(f'{next_link}', callback=self.next_page)
+            # llamamos a nuestra misma funcion para poder seguir obteniendo links de las paginas
+            yield response.follow(f'{next_link}', callback=self.parse)
         else:
-            self.data['state'].extend([state for i in self.data['name']])
-            df = pd.DataFrame(self.data)
-            df.to_excel(f'{target}_paginas_amarillas_spain.xlsx', index=False)
+            # una vez tenemos todos los links procedemos a ejecutar la funcion in_page para investigarlos a fondo
+            for i in self.links:
+                yield response.follow(i, callback=self.gather_page_info)
 
-    def next_page(self, response):
-        self.data['name'].extend(response.xpath(
-            f'{sentences["names"]}').getall())
-        self.data['address'].extend(response.xpath(
-            f'{sentences["address"]}').getall())
-        self.data['postal_code'].extend(response.xpath(
-            f'{sentences["postal_code"]}').getall())
-        self.data['phone'].extend(response.xpath(
-            f'{sentences["phone"]}').getall())
+    def save_results(self):
+        self.data['state'].extend([state for i in self.data['name']])
+        df = pd.DataFrame(self.data)
+        df.to_excel(f'{target}_paginas_amarillas_spain.xlsx', index=False)
 
-        if response.xpath('//i[contains(@class,"flecha-derecha")]'):
-            next_link = response.xpath(
-                '//i[contains(@class,"flecha-derecha")]/../@href').get()
-            yield response.follow(f'{next_link}', callback=self.next_page)
+    def gather_page_info(self, response):
+        self.data['name'].append(response.xpath(
+            f'{sentences["names"]}').get())
+        self.data['address'].append(response.xpath(
+            f'{sentences["address"]}').get())
+        self.data['postal_code'].append(response.xpath(
+            f'{sentences["postal_code"]}').get())
+        self.data['phone'].append(response.xpath(
+            f'{sentences["phone"]}').get())
+
+        email_text = response.xpath(sentences['email']).get()
+        if email_text:
+            captured_mail = re.search(patron_re, email_text).group(1)
+            self.data['email'].append(captured_mail)
         else:
-            self.data['state'].extend([state for i in self.data['name']])
-            df = pd.DataFrame(self.data)
-            df.to_excel(f'{target}_paginas_amarillas_spain.xlsx', index=False)
+            self.data['email'].append('no_encontrado')
+        print(self.data)

@@ -7,7 +7,7 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
-BOT_NAME = "spain"
+BOT_NAME = "wardell university"
 
 SPIDER_MODULES = ["spain.spiders"]
 NEWSPIDER_MODULE = "spain.spiders"

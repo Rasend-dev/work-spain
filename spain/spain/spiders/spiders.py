@@ -77,5 +77,5 @@ class PaginasAmarillas(scrapy.Spider):
 
         # adding to the file section
         df = pd.read_excel(filename)
-        df.append(self.data, ignore_index=True)
+        df = pd.concat([df,pd.DataFrame(self.data)], ignore_index=True)
         df.to_excel(filename, index=False)
